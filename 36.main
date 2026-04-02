@@ -1,0 +1,39 @@
+// 标准固定宽度整型头文件
+#include <stdint.h>
+// 输入输出头文件（用于打印验证）
+#include <stdio.h>
+
+// ==================== Windows 专用：强制1字节内存对齐 ====================
+// 关键：禁止编译器填充空字节，保证协议头部紧凑连续
+#pragma pack(push, 1)
+
+// ==================== 传统以太网帧头部定义 (Ethernet II) ====================
+// 总长度：固定 14 字节
+struct ethernet_frame_header
+{
+    // 1. 目的MAC地址 (6字节)
+    uint8_t dst_mac[6];
+    // 2. 源MAC地址 (6字节)
+    uint8_t src_mac[6];
+    // 3. 以太网类型/长度字段 (2字节)
+    // 常用值：0x0800=IPv4  0x0806=ARP  0x86DD=IPv6
+    uint16_t eth_type;
+};
+
+// 恢复编译器默认内存对齐（避免影响其他代码）
+#pragma pack(pop)
+
+// ==================== 主函数：测试验证 ====================
+int main()
+{
+    // 打印以太网帧头部大小，必须输出 14
+    printf("传统以太网帧头部大小：%zu 字节\n", sizeof(struct ethernet_frame_header));
+
+    // 字段说明
+    printf("\n字段结构：\n");
+    printf("1. dst_mac  ：6字节（目标MAC地址）\n");
+    printf("2. src_mac  ：6字节（源MAC地址）\n");
+    printf("3. eth_type ：2字节（上层协议类型）\n");
+
+    return 0;
+}
