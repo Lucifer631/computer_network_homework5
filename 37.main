@@ -1,0 +1,118 @@
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+#include <random>
+#include <string>
+
+// ==================== CSMA/CD 协议常量定义 ====================
+const int SLOT_TIME = 100;               // 时隙时间(ms)，以太网基础时间单位
+const int MAX_RETRY = 10;                // 最大重传次数（二进制退避上限）
+const int SEND_DURATION = 50;            // 模拟数据发送耗时(ms)
+
+// ==================== 共享信道（全局资源，多线程竞争） ====================
+std::mutex channel_mutex;                // 信道互斥锁（保证线程安全）
+bool is_channel_busy = false;            // 信道状态：true=忙，false=空闲
+std::random_device rd;                   // 随机数发生器
+std::mt19937 gen(rd());                  // 随机数引擎
+
+// ==================== 二进制指数退避算法（CSMA/CD 核心） ====================
+int binary_exponential_backoff(int retry_count) {
+    // 退避次数 k = min(重传次数, 10)，防止等待时间过长
+    int k = std::min(retry_count, MAX_RETRY);
+    // 退避时间 = 随机数(0 ~ 2^k - 1) × 时隙时间
+    int max_wait = (1 << k) - 1;
+    std::uniform_int_distribution<> dist(0, max_wait);
+    int wait_slots = dist(gen);
+    return wait_slots * SLOT_TIME;
+}
+
+// ==================== 模拟单个主机的 CSMA/CD 发送逻辑 ====================
+void csma_cd_host(int host_id) {
+    int retry_count = 0;                 // 当前重传次数
+    bool send_success = false;           // 发送状态
+
+    while (retry_count <= MAX_RETRY && !send_success) {
+        // ========= 1. 载波监听：持续检测信道是否空闲 =========
+        bool channel_idle = false;
+        while (!channel_idle) {
+            std::lock_guard<std::mutex> lock(channel_mutex);
+            channel_idle = !is_channel_busy;
+            if (!channel_idle) {
+                printf("[主机%d] 信道忙，持续监听...\n", host_id);
+                std::this_thread::sleep_for(std::chrono::milliseconds(SLOT_TIME));
+            }
+        }
+
+        // ========= 2. 信道空闲，尝试发送数据 =========
+        printf("[主机%d] 信道空闲，开始发送数据...\n", host_id);
+        
+        // 加锁标记信道为忙
+        channel_mutex.lock();
+        is_channel_busy = true;
+        channel_mutex.unlock();
+
+        // 模拟发送过程（同时检测冲突）
+        std::this_thread::sleep_for(std::chrono::milliseconds(SEND_DURATION));
+
+        // ========= 3. 冲突检测（模拟多主机同时发送） =========
+        bool collision = false;
+        {
+            std::lock_guard<std::mutex> lock(channel_mutex);
+            // 随机模拟冲突（多线程竞争必然触发）
+            std::uniform_int_distribution<> collide_dist(0, 1);
+            collision = (collide_dist(gen) == 0) && (retry_count < MAX_RETRY);
+        }
+
+        if (collision) {
+            // ========= 4. 冲突处理 =========
+            printf("[主机%d] 检测到冲突！停止发送，发送干扰信号...\n", host_id);
+            retry_count++;
+
+            // 释放信道
+            channel_mutex.lock();
+            is_channel_busy = false;
+            channel_mutex.unlock();
+
+            // 二进制指数退避，等待后重传
+            int wait_time = binary_exponential_backoff(retry_count);
+            printf("[主机%d] 第%d次重传，退避等待 %d ms...\n", host_id, retry_count, wait_time);
+            std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
+        } else {
+            // ========= 5. 发送成功 =========
+            printf("[主机%d] 数据发送成功！\n", host_id);
+            send_success = true;
+
+            // 释放信道
+            channel_mutex.lock();
+            is_channel_busy = false;
+            channel_mutex.unlock();
+        }
+    }
+
+    if (!send_success) {
+        printf("[主机%d] 重传次数超限，发送失败！\n", host_id);
+    }
+}
+
+// ==================== 主函数：创建多主机线程，模拟 CSMA/CD ============
+int main() {
+    setlocale(LC_ALL, "chs");            // Windows 控制台中文支持
+    int host_num = 3;                     // 模拟3个主机共享信道
+
+    printf("========== 开始模拟 CSMA/CD 协议（%d个主机）==========\n\n", host_num);
+
+    // 创建多线程（每个线程代表一个以太网主机）
+    std::thread hosts[host_num];
+    for (int i = 0; i < host_num; i++) {
+        hosts[i] = std::thread(csma_cd_host, i + 1);
+    }
+
+    // 等待所有线程执行完毕
+    for (int i = 0; i < host_num; i++) {
+        hosts[i].join();
+    }
+
+    printf("\n========== CSMA/CD 模拟结束 ==========\n");
+    return 0;
+}
