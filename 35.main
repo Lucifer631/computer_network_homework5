@@ -1,0 +1,79 @@
+#include <iostream>
+#include <cstring>
+// 定义MAC地址长度宏
+#define MAC_ADDRESS_LENGTH 6
+
+// 定义MAC地址类型
+typedef unsigned char MAC_address[MAC_ADDRESS_LENGTH];
+
+// 定义以太网帧结构体
+typedef struct {
+    MAC_address dest_mac;   // 目的MAC地址
+    MAC_address src_mac;    // 源MAC地址
+    unsigned short type_len;// 帧类型/长度字段
+} EthernetFrame;
+
+// 本机MAC地址（全局变量）
+MAC_address this_mac_address = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+
+/**
+ * @brief 判断以太网帧的目的地址是否匹配本机、广播或多播
+ * @param frame 以太网帧指针
+ * @return 1=匹配，0=不匹配
+ */
+int mac_address_match(const EthernetFrame *frame) {
+    // 空指针直接返回不匹配
+    if (frame == nullptr) {
+        return 0;
+    }
+
+    // 1. 判断广播地址（所有字节为0xFF）
+    int is_broadcast = 1;
+    for (int i = 0; i < MAC_ADDRESS_LENGTH; i++) {
+        if (frame->dest_mac[i] != 0xFF) {
+            is_broadcast = 0;
+            break;
+        }
+    }
+    if (is_broadcast) {
+        return 1;
+    }
+
+    // 2. 判断多播地址（目的MAC首字节最低位为1）
+    if ((frame->dest_mac[0] & 0x01) == 1) {
+        return 1;
+    }
+
+    // 3. 判断本机单播地址
+    if (memcmp(frame->dest_mac, this_mac_address, MAC_ADDRESS_LENGTH) == 0) {
+        return 1;
+    }
+
+    // 所有条件都不满足，不匹配
+    return 0;
+}
+
+// 测试主函数
+int main() {
+    // 测试广播帧
+    EthernetFrame frame1;
+    memset(frame1.dest_mac, 0xFF, MAC_ADDRESS_LENGTH);
+    std::cout << "广播帧匹配结果: " << mac_address_match(&frame1) << std::endl;
+
+    // 测试多播帧
+    EthernetFrame frame2;
+    frame2.dest_mac[0] = 0x01;
+    std::cout << "多播帧匹配结果: " << mac_address_match(&frame2) << std::endl;
+
+    // 测试本机单播帧
+    EthernetFrame frame3;
+    memcpy(frame3.dest_mac, this_mac_address, MAC_ADDRESS_LENGTH);
+    std::cout << "本机单播帧匹配结果: " << mac_address_match(&frame3) << std::endl;
+
+    // 测试陌生单播帧
+    EthernetFrame frame4;
+    memset(frame4.dest_mac, 0x00, MAC_ADDRESS_LENGTH);
+    std::cout << "陌生单播帧匹配结果: " << mac_address_match(&frame4) << std::endl;
+
+    return 0;
+}
